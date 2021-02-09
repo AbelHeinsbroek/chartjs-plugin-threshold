@@ -9,127 +9,74 @@ var tracePlugin = {
   },
 
   beforeDatasetsUpdate: function(chart) {
-
-
-    if(!chart.options.threshold || chart.options.threshold.length == 0) {
-      return true
-    }
-
-    for(var index in chart.data.datasets) {
-      var dataset = chart.data.datasets[index]
-      if(dataset.noThresh) {
-        continue
+    // gather datasets that act as threshold 
+    var thresholds = []
+    for(var dataset of chart.data.datasets) {
+      if (dataset.threshold) {
+        thresholds.push(dataset)
       }
       if(dataset.originalBackgroundColor == undefined) {
         dataset.originalBackgroundColor = dataset.backgroundColor
       }
-      var backgroundColors = []
-      for(var pointIndex in dataset.data) {
-        var y = dataset.data[pointIndex].y
+    }
+    // loop through datasets, update colors
+    for(var dataset of chart.data.datasets) {
+      if(dataset.noThresh || dataset.threshold || dataset.showLine) {
+        continue
+      }
 
-        var matched = false
-        for(var ruleIndex in chart.options.threshold) {
-          var rule = chart.options.threshold[ruleIndex]
-          if(this.evaluateRule(y, rule)) {
-            backgroundColors.push(rule.color)
-            matched = true
-            break
+      var backgroundColors = []
+
+      for(var point of dataset.data) {
+
+        var matched = ""
+
+        for(var threshold of thresholds) {
+          var index = threshold.data.findIndex(function(o) { return o.x >= point.x})
+
+          if (index == -1) { continue }
+          // get value at index
+          var value = (index > 0) ? threshold.data[index-1].y : threshold.data[index].y
+
+          if (this.evaluateRule(point.y, threshold.threshold, value)) {
+            matched = threshold.borderColor
           }
         }
-        if(!matched) {
+
+        if(matched == "") {
           backgroundColors.push(dataset.originalBackgroundColor)
+        } else {
+          backgroundColors.push(matched)
         }
       }
-      // line border color
-      if(chart.config.type == 'bar') {
-        dataset.borderColor = backgroundColors
-        dataset.backgroundColor = backgroundColors
-      } else {
-        dataset.borderColor = this.calculateGradient(chart, dataset.backgroundColor)
-      }
+
       dataset.pointBackgroundColor = backgroundColors
       dataset.pointBorderColor = backgroundColors
+
+      if (dataset.type == 'bar' || chart.config.type == 'bar') {
+        dataset.borderColor = backgroundColors
+        dataset.backgroundColor = backgroundColors
+      }
+
     }
 
-    return true
   },
 
-  evaluateRule: function(value, rule) {
+  evaluateRule: function(value, rule, rule_value) {
 
-    switch(rule.mode) {
+    switch(rule) {
       case "ge":
-        return value >= rule.value
-        break;
+        return value >= rule_value
       case "gt":
-        return value > rule.value
-        break;
+        return value > rule_value
       case "lt":
-        return value < rule.value
-        break;
+        return value < rule_value
       case "le":
-        return value <= rule.value
-        break;
+        return value <= rule_value
       default:
         return false
     }
 
-  },
-
-  calculateGradient: function(chart, baseColor) {
-
-    var yScale = chart.scales[chart.getDatasetMeta(0).yAxisID];
-    var gradient = chart.ctx.createLinearGradient(0, yScale.getPixelForValue(yScale.min), 0, yScale.getPixelForValue(yScale.max))
-
-    var height = yScale.getPixelForValue(yScale.min) - yScale.getPixelForValue(yScale.max)
-
-    var lower = 0
-    var nextStop = 0
-    var inserted = false
-
-    var rules = chart.options.threshold.slice(0).sort(function(a,b) { return a.value - b.value })
-
-    for(var ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
-      var rule = rules[ruleIndex]
-      var stop = (yScale.getPixelForValue(rule.value) - yScale.getPixelForValue(yScale.max)) / height
-
-
-      if(stop < 0) { stop = 0 }
-      if(stop > 1) { stop = 1 }
-
-      stop = 1-stop
-      if(ruleIndex < rules.length-1) {
-        nextStop = (yScale.getPixelForValue(rules[ruleIndex+1].value) - yScale.getPixelForValue(yScale.max)) / height
-        if(nextStop > 1) { nextStop = 1 }
-        if(nextStop < 0) { nextStop = 0 }
-        nextStop = 1 - nextStop
-      } else {
-        nextStop = 1
-      }
-
-
-      if(rule.mode[0] == 'l') {
-        gradient.addColorStop(lower, rule.color)
-        gradient.addColorStop(stop, rule.color)
-        lower = stop
-      } 
-      if(rule.mode[0] == 'g' && !inserted) {
-        gradient.addColorStop(lower, baseColor)
-        gradient.addColorStop(stop, baseColor)
-        lower = stop
-        inserted = true
-      }
-      if(rule.mode[0] == 'g') {
-        gradient.addColorStop(lower, rule.color)
-        gradient.addColorStop(nextStop, rule.color)
-        lower = nextStop
-      }
-    }
-    if(!inserted) {
-      gradient.addColorStop(lower, baseColor)
-      gradient.addColorStop(1, baseColor)
-    }
-
-    return gradient
   },
 
   fixLegendColors: function(chart) {
@@ -146,45 +93,10 @@ var tracePlugin = {
   },
 
   beforeDraw: function(chart) {
-
-    if(!chart.options.threshold || chart.data.datasets.length == 0) {
-      return true
-    }
-
-
-    for(var thresholdIndex in chart.options.threshold) {
-
-      var threshold = chart.options.threshold[thresholdIndex]
-
-      this.drawThresholdLine(chart, threshold.value, threshold.color)
-    }
-
-
-    this.fixLegendColors(chart)
-
+    // this.fixLegendColors(chart)
     return true
   },
 
-
-  drawThresholdLine: function(chart, value, color) {
-
-
-    var yScale = chart.scales[chart.getDatasetMeta(0).yAxisID];
-    var xScale = chart.scales[chart.getDatasetMeta(0).xAxisID];
-
-    if(yScale.getPixelForValue(value) < yScale.getPixelForValue(yScale.max) || yScale.getPixelForValue(value) > yScale.getPixelForValue(yScale.min)) {
-      // hide if outside scales
-      return
-    }
-
-    chart.ctx.beginPath();
-    chart.ctx.moveTo(xScale.getPixelForValue(xScale.min), yScale.getPixelForValue(value));
-    chart.ctx.lineWidth = 1.5
-    chart.ctx.strokeStyle = color;
-    chart.ctx.lineTo(xScale.getPixelForValue(xScale.max), yScale.getPixelForValue(value));
-    chart.ctx.stroke();
-    chart.ctx.closePath();
-  },
 }
 
 Chart.plugins.register(tracePlugin);
