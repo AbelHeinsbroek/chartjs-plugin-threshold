@@ -1,6 +1,8 @@
-var helpers = Chart.helpers
+import {Chart} from 'chart.js'
 
-var tracePlugin = {
+var thresholdPlugin = {
+
+  id: 'threshold',
 
   afterInit: function(chart) {
   },
@@ -99,4 +101,4 @@ var tracePlugin = {
 
 }
 
-Chart.plugins.register(tracePlugin);
+Chart.register(thresholdPlugin);
