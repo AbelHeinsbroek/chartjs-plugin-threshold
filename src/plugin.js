@@ -21,6 +21,9 @@ var thresholdPlugin = {
         dataset.originalBackgroundColor = dataset.backgroundColor
       }
     }
+
+    if(thresholds.length == 0) { return }
+
     // loop through datasets, update colors
     for(var dataset of chart.data.datasets) {
       if(dataset.noThresh || dataset.threshold || dataset.showLine) {
